@@ -117,6 +117,49 @@ textarea.csv-input{background:var(--bg);border:1px solid var(--border);color:var
 .spark{width:72px;height:24px}
 
 #loading{text-align:center;padding:4rem;color:var(--muted)}
+
+/* ══ RESPONSIVE MOBILE / TABLET ══ */
+#sidebar-toggle{display:none;background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:.3rem .7rem;cursor:pointer;font-size:1.1rem;line-height:1}
+
+@media (max-width:768px){
+  header{padding:.5rem .75rem;gap:.4rem}
+  header h1{font-size:.88rem}
+  .header-stats{font-size:.67rem;gap:.35rem}
+  .hstat{padding:.12rem .35rem}
+  #sidebar-toggle{display:block}
+
+  .layout{flex-direction:column;height:auto;overflow:visible}
+
+  aside{width:100%;max-height:0;overflow:hidden;border-right:none;
+    border-bottom:1px solid var(--border);transition:max-height .25s ease;
+    display:flex;flex-wrap:wrap;padding:0}
+  aside.open{max-height:500px;overflow-y:auto;padding:.4rem 0}
+  .cat-btn{width:50%;font-size:.72rem;padding:.4rem .6rem}
+
+  main{padding:.5rem}
+  input[type=search]{min-width:100%}
+  select,input[type=search]{font-size:.73rem}
+
+  thead th:nth-child(3),td:nth-child(3){display:none}
+  thead th:nth-child(6),td:nth-child(6){display:none}
+  thead th:nth-child(10),td:nth-child(10){display:none}
+
+  td,thead th{padding:.3rem .35rem;font-size:.7rem}
+  td.name{max-width:130px}
+
+  #modal-bg{padding:.4rem}
+  #modal{border-radius:10px;padding:.85rem}
+  .modal-stats{grid-template-columns:repeat(2,1fr)}
+  .chart-wrap{height:160px}
+}
+
+@media (max-width:420px){
+  .cat-btn{width:100%}
+  thead th:nth-child(9),td:nth-child(9){display:none}
+  thead th:nth-child(11),td:nth-child(11){display:none}
+  td.name{max-width:100px}
+  .hstat:nth-child(n+3){display:none}
+}
 </style>
 </head>
 <body>
@@ -124,6 +167,7 @@ textarea.csv-input{background:var(--bg);border:1px solid var(--border);color:var
 <header>
   <span style="font-size:1.5rem">🌺</span>
   <h1>Verdnatura — Dashboard Prix</h1>
+  <button id="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
   <div class="header-stats" id="hstats"></div>
 </header>
 
@@ -234,6 +278,44 @@ Roses Hollande,1.20"></textarea>
 <div id="app" style="display:none"></div>
 
 <script>
+// ── TRADUCTION ESP → FR ────────────────────────────────────────
+const TR = {
+  // Couleurs
+  "Blanco":"Blanc","Rojo":"Rouge","Rosa":"Rose","Amarillo":"Jaune",
+  "Naranja":"Orange","Morado":"Violet","Lila":"Lilas","Fucsia":"Fuchsia",
+  "Salmon":"Saumon","Verde":"Vert","Azul":"Bleu","Bicolor":"Bicolore",
+  "Burgundy":"Bordeaux","Coral":"Corail","Crema":"Crème","Bronce":"Bronze",
+  "Negro":"Noir","Marfil":"Ivoire","Lavanda":"Lavande","Magenta":"Magenta",
+  "Tinted":"Teinté","Variado":"Varié","Mix":"Mix",
+  // Espèces courantes
+  "Rosa":"Rose","Rosas":"Roses","Clavel":"Œillet","Crisantemo":"Chrysanthème",
+  "Gerbera":"Gerbera","Tulipán":"Tulipe","Lilium":"Lys","Hydrangea":"Hortensia",
+  "Alstroemeria":"Alstroméria","Anthurium":"Anthurium","Orquídea":"Orchidée",
+  "Calas":"Calla","Gypsophila":"Gypsophile","Paniculata":"Paniculata",
+  "Lisianthus":"Lisianthus","Cymbidium":"Cymbidium","Bouquet":"Bouquet",
+  "Frutos":"Fruits","Ramas":"Branches","Tropicales":"Tropicaux",
+  "Silvestre":"Sauvage","Espigada":"Épis","Relleno":"Remplissage",
+  "Bulbos":"Bulbes","Flores":"Fleurs",
+  // Origines
+  "Colombia":"Colombie","Holanda":"Hollande","Ecuador":"Équateur",
+  "España":"Espagne","Kenya":"Kenya","Israel":"Israël",
+  // Qualificatifs
+  "Select":"Select","Grande":"Grand","Mini":"Mini","Short":"Court",
+  "Nacional":"National","Subasta":"Enchères","Jardín":"Jardin",
+  "Spray":"Spray","Uniflora":"Uniflore","Preservado":"Préservé",
+  "Seco":"Séché","Natural":"Naturel","Artificial":"Artificiel",
+  "Navidad":"Noël","Campaña":"Campagne","Variada":"Variée",
+};
+
+function traducir(name) {
+  if (!name) return name;
+  // Nettoyer le préfixe "· "
+  let s = name.replace(/^[·•\-]\s*/, "").trim();
+  // Remplacer mot par mot
+  s = s.replace(/([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/g, w => TR[w] || w);
+  return s;
+}
+
 // ── REALM MAP ──────────────────────────────────────────────────
 const REALM_MAP = {
   // Anciens clés (compatibilité)
@@ -467,7 +549,7 @@ function renderTable(){
 
     return `<tr onclick="openModal('${esc(p.ref)}')">
       <td class="mono" style="font-size:.68rem">${esc(p.ref)}</td>
-      <td class="name"><span title="${esc(p.name)}">${esc(p.name)}</span>
+      <td class="name"><span title="${esc(p.name)}">${esc(traducir(p.name))}</span>
         ${p.sub_name ? `<div style="font-size:.67rem;color:var(--muted)">${esc(p.sub_name)}</div>` : ""}
       </td>
       <td class="muted" style="font-size:.72rem">${esc(p.subcategory||"")}</td>
