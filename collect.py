@@ -172,13 +172,15 @@ def fetch_basket_defaults(api: VerdnaturaAPI) -> dict:
     return {}
 
 
-def create_order(api: VerdnaturaAPI) -> int | None:
-    """Crée une nouvelle commande avec les paramètres du compte."""
+def create_order(api: VerdnaturaAPI, delivery_date: date = None) -> tuple[int | None, date | None]:
+    """Crée une nouvelle commande avec les paramètres du compte.
+    Retourne (order_id, delivery_date) ou (None, None) en cas d'échec."""
 
     defaults      = fetch_basket_defaults(api)
     address_id    = defaults.get("addressId", 78596)
     agency_mode   = defaults.get("agencyModeId", 639)
-    delivery_date = next_valid_date()
+    if delivery_date is None:
+        delivery_date = next_valid_date()
     landed        = delivery_date.strftime("%Y-%m-%dT22:00:00.000Z")
 
     print(f"  📅 {delivery_date.strftime('%d/%m/%Y')}  |  addressId={address_id}  agencyModeId={agency_mode}")
@@ -194,7 +196,7 @@ def create_order(api: VerdnaturaAPI) -> int | None:
         order_id = order["id"]
         print(f"  ✅ Commande créée : #{order_id}")
         time.sleep(1)
-        return order_id
+        return order_id, delivery_date
 
     # Fallback : essayer sans agencyModeId (certaines versions de l'API l'ignorent)
     print("  🔄 Retry sans agencyModeId…")
@@ -204,10 +206,10 @@ def create_order(api: VerdnaturaAPI) -> int | None:
         order_id = order2["id"]
         print(f"  ✅ Commande créée (fallback) : #{order_id}")
         time.sleep(1)
-        return order_id
+        return order_id, delivery_date
 
     print("  ❌ Création commande échouée")
-    return None
+    return None, None
 
 
 def delete_order(api: VerdnaturaAPI, order_id: int) -> bool:
@@ -580,9 +582,42 @@ def scrape_via_api(vn_user: str, vn_pass: str) -> list[dict]:
 
     # ── Créer une commande temporaire ──────────────────────────
     print("\n📦 Création commande temporaire…")
-    order_id = create_order(api)
+    target_date = next_valid_date()
+    order_id, target_date = create_order(api, target_date)
     if not order_id:
         return []
+
+    # ── Sondage de validité : tester un type connu pour être bien fourni ──
+    # Si la date choisie ne propose aucun produit (ex: pas de tournée ce jour-là),
+    # on bascule automatiquement sur le jour ouvré suivant (jusqu'à 5 tentatives).
+    probe_types = get_all_item_types(api)
+    probe_ok = False
+    attempts = 0
+    while not probe_ok and attempts < 5:
+        # Sonder la catégorie 1 (Fleurs coupées), 1ère famille dispo
+        cat1_types = probe_types.get(1, [])
+        if cat1_types:
+            probe = get_products_for_type(api, order_id, 1, cat1_types[0]["id"])
+            if probe:
+                probe_ok = True
+                break
+        attempts += 1
+        if attempts < 5:
+            print(f"  ⚠️  Aucun produit pour le {target_date.strftime('%d/%m/%Y')} — test date suivante…")
+            delete_order(api, order_id)
+            target_date = target_date + timedelta(days=1)
+            while target_date.weekday() not in {1, 2, 3, 4}:
+                target_date += timedelta(days=1)
+            order_id, target_date = create_order(api, target_date)
+            if not order_id:
+                return []
+
+    if not probe_ok:
+        print("  ❌ Aucune date valide trouvée après 5 tentatives — abandon")
+        delete_order(api, order_id)
+        return []
+
+    print(f"  ✅ Date de livraison confirmée : {target_date.strftime('%d/%m/%Y')}")
 
     # ── Récupérer toutes les familles par catégorie ───────────
     print("\n🗂️  Récupération des familles…")
