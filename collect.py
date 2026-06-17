@@ -57,8 +57,15 @@ def get_period() -> str:
 
 
 def next_valid_date() -> date:
-    d = date.today() + timedelta(days=1)
-    while d.weekday() not in {1, 2, 3, 4}: d += timedelta(days=1)
+    """
+    Date de livraison cible = J+2 minimum, ou le premier jour ouvré suivant
+    parmi mardi/mercredi/jeudi/vendredi (weekday 1-4).
+    On évite le lundi (souvent rupture après le week-end) et le J+1 (délai
+    trop court pour certains articles en flux tendu).
+    """
+    d = date.today() + timedelta(days=2)
+    while d.weekday() not in {1, 2, 3, 4}:  # mar, mer, jeu, ven
+        d += timedelta(days=1)
     return d
 
 
@@ -310,13 +317,16 @@ def normalize_product(raw: dict, category: str, subcategory: str) -> dict | None
     # Référence unique = id produit (stable entre snapshots)
     ref = str(raw.get("id") or raw.get("itemFk") or name)
 
-    # Prix unitaire
+    # Prix UNITAIRE (déjà à la tige/pièce — Verdnatura affiche le prix par unité,
+    # ex: "0.32€ x10" = 0.32€/tige avec minimum d'achat 10 tiges, PAS 0.32€ pour le lot de 10)
     try:
         price = float(raw.get("price") or raw.get("rate1") or 0)
     except (TypeError, ValueError):
         price = 0.0
 
-    # Conditionnement (tiges par botte)
+    # Quantité MINIMUM d'achat (pas un multiplicateur de prix !)
+    # grouping=10 signifie "vendu par lots de 10 minimum", le prix ci-dessus
+    # est déjà celui d'UNE tige/pièce.
     try:
         grouping = int(raw.get("grouping") or raw.get("packing") or raw.get("minQuantity") or 1)
     except (TypeError, ValueError):
