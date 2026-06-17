@@ -495,12 +495,12 @@ function applyFilters(){
     return true;
   });
   filtered.forEach(p=>{
-    // PA unitaire = Prix total d'achat (HT, Verdnatura) / CDT Achat
-    const cdtAchat = p.grouping > 0 ? p.grouping : 1;
-    const paTotal  = p.price_last || 0;
-    p._paUnit = cdtAchat > 0 ? paTotal / cdtAchat : 0;
+    // PA unitaire — Verdnatura affiche déjà le prix À L'UNITÉ (tige/pièce).
+    // p.grouping = quantité MINIMUM d'achat, ce n'est PAS un diviseur de prix.
+    p._paUnit = p.price_last || 0;
+    p._minQty = p.grouping > 0 ? p.grouping : 1;
 
-    // PV unitaire = Prix total de vente (TTC) / CDT Vente
+    // PV unitaire = Prix total de vente (TTC) / CDT Vente (conditionnement boutique)
     const pvTotal = getPrixVente(p);
     const cdtVente = getCdtVente(p);
     p._pv = pvTotal;
@@ -531,7 +531,7 @@ function renderTable(){
   tbody.innerHTML=slice.map(p=>{
     const unit=p._paUnit, pv=p._pv, mpct=p._mpct, cdtV=p._cdtVente;
     const unitStr=unit>0?`<span class="mono">${unit.toFixed(3)}€</span>`:"<span class='muted'>—</span>";
-    const condStr=p.grouping>1?`<span class="cond">×${p.grouping}</span>`:`<span class="cond">unité</span>`;
+    const condStr=p.grouping>1?`<span class="cond" title="Quantité minimum d'achat">min ×${p.grouping}</span>`:`<span class="cond">unité</span>`;
 
     const cdtInput = `<input class="cdt-vente" type="number" step="1" min="1" value="${cdtV}" data-ref="${esc(p.ref)}" onchange="setCdtVente(this)" onclick="event.stopPropagation()">`;
     const pvInput = pv!=null
@@ -572,8 +572,8 @@ function renderTable(){
 }
 
 function recalcMarginRow(row, p){
-  const cdtAchat = p.grouping>0 ? p.grouping : 1;
-  const paUnit = p.price_last>0 ? p.price_last/cdtAchat : 0;
+  // p.price_last est déjà le prix unitaire Verdnatura (pas besoin de diviser par grouping)
+  const paUnit = p.price_last || 0;
   const pv = getPrixVente(p);
   const cdtV = getCdtVente(p);
   const pvUnitHt = pv ? (pv/cdtV)/TVA : null;
@@ -629,8 +629,8 @@ function openModal(ref){
   const p=DATA.products.find(x=>String(x.ref)===ref);if(!p)return;
   selectedRef=ref;
   const info=catInfo(p.category);
-  const cdtAchat = p.grouping>0 ? p.grouping : 1;
-  const paUnit = p.price_last>0 ? p.price_last/cdtAchat : 0;
+  // p.price_last est déjà le prix unitaire Verdnatura
+  const paUnit = p.price_last || 0;
   const pv = getPrixVente(p);
   const cdtVente = getCdtVente(p);
   const pvUnitHt = pv ? (pv/cdtVente)/TVA : null;
@@ -640,7 +640,7 @@ function openModal(ref){
   document.getElementById("modal-meta").textContent=
     `${info.emoji} ${info.label} › ${p.subcategory||""} · Réf. ${p.ref} · Depuis ${fmtDate(p.first_seen)} · ${p.snap_count||0} obs.`;
   document.getElementById("modal-stats").innerHTML=`
-    <div class="ms"><div class="ms-val">${p.grouping>1?`Achat ×${p.grouping}`:"Achat unité"}</div><div class="ms-lbl">Cond. achat (Verdnatura)</div></div>
+    <div class="ms"><div class="ms-val">${p.grouping>1?`Min. ×${p.grouping}`:"Sans minimum"}</div><div class="ms-lbl">Qté min. achat (Verdnatura)</div></div>
     <div class="ms"><div class="ms-val">${cdtVente>1?`Vente ×${cdtVente}`:"Vente unité"}</div><div class="ms-lbl">Cond. vente (boutique)</div></div>
     <div class="ms"><div class="ms-val">${paUnit>0?paUnit.toFixed(3)+"€":"—"}</div><div class="ms-lbl">PA HT / unité</div></div>
     <div class="ms"><div class="ms-val" style="color:var(--orange)">${pv?(pv/cdtVente).toFixed(2)+"€":"—"}</div><div class="ms-lbl">PV TTC / unité</div></div>
