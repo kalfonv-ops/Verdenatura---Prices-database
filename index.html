@@ -61,6 +61,13 @@ input.prix-vente{background:rgba(116,198,157,.08);border:1px solid rgba(116,198,
 input.prix-vente:focus{outline:none;border-color:var(--g1);background:rgba(64,145,108,.15)}
 input.cdt-vente{background:rgba(116,198,157,.08);border:1px solid rgba(116,198,157,.15);color:var(--text);border-radius:4px;padding:.15rem .3rem;width:34px;font-size:.73rem;text-align:center}
 input.cdt-vente:focus{outline:none;border-color:var(--g1);background:rgba(64,145,108,.15)}
+/* Masquer les flèches +/- des champs number (non utiles, gênent la saisie tactile) */
+input.prix-vente::-webkit-outer-spin-button,
+input.prix-vente::-webkit-inner-spin-button,
+input.cdt-vente::-webkit-outer-spin-button,
+input.cdt-vente::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input.prix-vente[type=number],input.cdt-vente[type=number]{-moz-appearance:textfield}
+.manual-flag{font-size:.6rem;color:var(--g2);margin-top:.1rem}
 .pv-row{display:flex;align-items:center;gap:.25rem}
 .pv-row .x{color:var(--muted);font-size:.68rem}
 .match-badge{font-size:.58rem;color:var(--muted);margin-top:.15rem}
@@ -171,11 +178,7 @@ textarea.csv-input{background:var(--bg);border:1px solid var(--border);color:var
     <div class="toolbar">
       <input type="search" id="search" placeholder="🔍 Rechercher…">
       <select id="filter-sub"><option value="">Tous sous-genres</option></select>
-      <select id="filter-status">
-        <option value="all">Tous statuts</option>
-        <option value="active">Actifs</option>
-        <option value="inactive">Disparus</option>
-      </select>
+      <button class="btn" id="filter-status-btn" data-status="all" onclick="toggleActiveOnly()">ACTIF</button>
       <select id="sort-by">
         <option value="name">Trier : Nom</option>
         <option value="price_last">Prix achat</option>
@@ -482,10 +485,19 @@ function toggleImport(){
 }
 
 // ── FILTER + SORT ─────────────────────────────────────────────
+function toggleActiveOnly(){
+  const btn = document.getElementById("filter-status-btn");
+  const isActive = btn.dataset.status === "active";
+  const next = isActive ? "all" : "active";
+  btn.dataset.status = next;
+  btn.className = next==="active" ? "btn btn-green" : "btn";
+  applyFilters();
+}
+
 function applyFilters(){
   const q=document.getElementById("search").value.toLowerCase();
   const sub=document.getElementById("filter-sub").value;
-  const st=document.getElementById("filter-status").value;
+  const st=document.getElementById("filter-status-btn").dataset.status;
   filtered=DATA.products.filter(p=>{
     if(activeCat!=="all"&&p.category!==activeCat)return false;
     if(sub&&(p.subcategory||"")!==sub)return false;
@@ -533,11 +545,13 @@ function renderTable(){
     const unitStr=unit>0?`<span class="mono">${unit.toFixed(3)}€</span>`:"<span class='muted'>—</span>";
     const condStr=p.grouping>1?`<span class="cond" title="Quantité minimum d'achat">min ×${p.grouping}</span>`:`<span class="cond">unité</span>`;
 
-    const cdtInput = `<input class="cdt-vente" type="number" step="1" min="1" value="${cdtV}" data-ref="${esc(p.ref)}" onchange="setCdtVente(this)" onclick="event.stopPropagation()">`;
+    const isManual = sellPrices[String(p.ref)]!==undefined || sellCdt[String(p.ref)]!==undefined;
+    const cdtInput = `<input class="cdt-vente" type="number" inputmode="numeric" step="1" min="1" value="${cdtV}" data-ref="${esc(p.ref)}" onchange="setCdtVente(this)" onblur="setCdtVente(this)" onclick="event.stopPropagation()">`;
     const pvInput = pv!=null
-      ?`<input class="prix-vente" type="number" step="0.01" min="0" value="${pv.toFixed(2)}" data-ref="${esc(p.ref)}" onchange="setPrixVente(this)" onclick="event.stopPropagation()">`
-      :`<input class="prix-vente" type="number" step="0.01" min="0" placeholder="—" data-ref="${esc(p.ref)}" onchange="setPrixVente(this)" onclick="event.stopPropagation()">`;
-    const pvCell = `<div class="pv-row">${cdtInput}<span class="x">×</span>${pvInput}</div>` + matchBadge(p);
+      ?`<input class="prix-vente" type="number" inputmode="decimal" step="0.01" min="0" value="${pv.toFixed(2)}" data-ref="${esc(p.ref)}" onchange="setPrixVente(this)" onblur="setPrixVente(this)" onclick="event.stopPropagation()">`
+      :`<input class="prix-vente" type="number" inputmode="decimal" step="0.01" min="0" placeholder="—" data-ref="${esc(p.ref)}" onchange="setPrixVente(this)" onblur="setPrixVente(this)" onclick="event.stopPropagation()">`;
+    const manualFlag = isManual ? `<div class="manual-flag">✏️ saisie manuelle</div>` : "";
+    const pvCell = `<div class="pv-row">${cdtInput}<span class="x">×</span>${pvInput}</div>` + (isManual ? manualFlag : matchBadge(p));
 
     let marginCell="<span class='muted'>—</span>";
     if(mpct!==null){
@@ -571,14 +585,17 @@ function renderTable(){
   document.getElementById("next-btn").disabled=page>=pages-1;
 }
 
-function recalcMarginRow(row, p){
-  // p.price_last est déjà le prix unitaire Verdnatura (pas besoin de diviser par grouping)
+function recalcMarginRow(row, p, srcEl){
+  const ref = String(p.ref);
   const paUnit = p.price_last || 0;
   const pv = getPrixVente(p);
   const cdtV = getCdtVente(p);
   const pvUnitHt = pv ? (pv/cdtV)/TVA : null;
   const mpct = (pvUnitHt!=null && paUnit>0) ? (pvUnitHt-paUnit)/pvUnitHt*100 : null;
   const coeff = (pvUnitHt!=null && paUnit>0) ? pvUnitHt/paUnit : null;
+
+  // Marge — la pastille colorée reste car la marge est toujours calculée,
+  // qu'elle soit basée sur Lilium ou sur saisie manuelle.
   const mc = row.cells[8];
   if(mc){
     if(mpct!==null){
@@ -586,29 +603,67 @@ function recalcMarginRow(row, p){
       mc.innerHTML=`<span class="${cls}">${mpct.toFixed(0)}%</span><br><small style="color:var(--muted)">${coeff.toFixed(2)}x · PA ${paUnit.toFixed(3)}€/u.</small>`;
     }else mc.innerHTML="<span class='muted'>—</span>";
   }
+
+  // Badge sous les champs Vente : remplacer le badge Lilium (✅/🟡/🔴) par "✏️ saisie manuelle"
+  // dès qu'au moins un des deux champs (CDT ou PV) est saisi à la main.
+  const isManual = sellPrices[ref]!==undefined || sellCdt[ref]!==undefined;
+  const pvRow = row.querySelector(".pv-row");
+  if(pvRow){
+    let badgeEl = pvRow.parentElement.querySelector(".match-badge, .manual-flag");
+    if(!badgeEl){
+      badgeEl = document.createElement("div");
+      pvRow.parentElement.appendChild(badgeEl);
+    }
+    if(isManual){
+      badgeEl.className = "manual-flag";
+      badgeEl.innerHTML = "✏️ saisie manuelle";
+    } else {
+      badgeEl.className = "match-badge";
+      badgeEl.innerHTML = p.pv_ttc && p.pv_label
+        ? matchBadge(p).replace(/<[^>]+class="match-badge"[^>]*>/,"").replace(/<\/div>$/,"")
+        : "";
+      // matchBadge() renvoie déjà le div complet — on le réinjecte simplement
+      badgeEl.outerHTML = matchBadge(p) || '<div class="match-badge"></div>';
+    }
+  }
 }
 
 function setPrixVente(el){
-  const val=parseFloat(el.value);
-  if(isNaN(val)||val<0)delete sellPrices[el.dataset.ref];
-  else sellPrices[el.dataset.ref]=val;
-  saveSellPrices();
+  // Garde anti-double-déclenchement (onchange + onblur peuvent se chevaucher)
+  if(el.dataset.processing==="1") return;
+  el.dataset.processing="1";
+  setTimeout(()=>{el.dataset.processing="0";},150);
+
+  const ref = String(el.dataset.ref);
+  const val = parseFloat(el.value);
+  const prevVal = sellPrices[ref];
+  if(isNaN(val)||val<0||el.value===""){ delete sellPrices[ref]; }
+  else { sellPrices[ref]=val; }
+  if(sellPrices[ref]!==prevVal) saveSellPrices();
+
   const row=el.closest("tr");
   if(row){
-    const p=DATA.products.find(x=>String(x.ref)===el.dataset.ref);
-    if(p) recalcMarginRow(row,p);
+    const p=DATA.products.find(x=>String(x.ref)===ref);
+    if(p) recalcMarginRow(row,p,el);
   }
 }
 
 function setCdtVente(el){
-  const val=parseInt(el.value);
-  if(isNaN(val)||val<1)delete sellCdt[el.dataset.ref];
-  else sellCdt[el.dataset.ref]=val;
-  saveSellCdt();
+  if(el.dataset.processing==="1") return;
+  el.dataset.processing="1";
+  setTimeout(()=>{el.dataset.processing="0";},150);
+
+  const ref = String(el.dataset.ref);
+  const val = parseInt(el.value);
+  const prevVal = sellCdt[ref];
+  if(isNaN(val)||val<1||el.value===""){ delete sellCdt[ref]; }
+  else { sellCdt[ref]=val; }
+  if(sellCdt[ref]!==prevVal) saveSellCdt();
+
   const row=el.closest("tr");
   if(row){
-    const p=DATA.products.find(x=>String(x.ref)===el.dataset.ref);
-    if(p) recalcMarginRow(row,p);
+    const p=DATA.products.find(x=>String(x.ref)===ref);
+    if(p) recalcMarginRow(row,p,el);
   }
 }
 
@@ -687,7 +742,7 @@ function render(){applyFilters();}
 // ── EVENTS ────────────────────────────────────────────────────
 document.getElementById("search").addEventListener("input",applyFilters);
 document.getElementById("filter-sub").addEventListener("change",applyFilters);
-document.getElementById("filter-status").addEventListener("change",applyFilters);
+
 document.getElementById("sort-by").addEventListener("change",e=>{sortKey=e.target.value;applyFilters();});
 document.getElementById("prev-btn").addEventListener("click",()=>{if(page>0){page--;renderTable();}});
 document.getElementById("next-btn").addEventListener("click",()=>{page++;renderTable();});
