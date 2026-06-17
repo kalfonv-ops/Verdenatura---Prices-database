@@ -413,8 +413,14 @@ function loadSellPrices(){
   try{sellCdt=JSON.parse(localStorage.getItem("vdn_sell_cdt")||"{}");}
   catch{sellCdt={};}
 }
-function saveSellPrices(){ localStorage.setItem("vdn_sell_prices",JSON.stringify(sellPrices)); }
-function saveSellCdt(){ localStorage.setItem("vdn_sell_cdt",JSON.stringify(sellCdt)); }
+function saveSellPrices(){
+  try{ localStorage.setItem("vdn_sell_prices",JSON.stringify(sellPrices)); }
+  catch(e){ console.error("[vdn] Erreur sauvegarde PV (localStorage bloqué ?)", e); alert("⚠️ Impossible de sauvegarder le prix — le stockage local est peut-être désactivé (navigation privée ?)"); }
+}
+function saveSellCdt(){
+  try{ localStorage.setItem("vdn_sell_cdt",JSON.stringify(sellCdt)); }
+  catch(e){ console.error("[vdn] Erreur sauvegarde CDT (localStorage bloqué ?)", e); alert("⚠️ Impossible de sauvegarder le conditionnement — le stockage local est peut-être désactivé (navigation privée ?)"); }
+}
 
 function getPrixVente(p){
   // 1. Manuel (priorité)
@@ -545,13 +551,16 @@ function renderTable(){
     const unitStr=unit>0?`<span class="mono">${unit.toFixed(3)}€</span>`:"<span class='muted'>—</span>";
     const condStr=p.grouping>1?`<span class="cond" title="Quantité minimum d'achat">min ×${p.grouping}</span>`:`<span class="cond">unité</span>`;
 
+    const refSafe = String(p.ref).replace(/[^a-zA-Z0-9_-]/g,"_");
     const isManual = sellPrices[String(p.ref)]!==undefined || sellCdt[String(p.ref)]!==undefined;
     const cdtInput = `<input class="cdt-vente" type="number" inputmode="numeric" step="1" min="1" value="${cdtV}" data-ref="${esc(p.ref)}" onchange="setCdtVente(this)" onblur="setCdtVente(this)" onclick="event.stopPropagation()">`;
     const pvInput = pv!=null
       ?`<input class="prix-vente" type="number" inputmode="decimal" step="0.01" min="0" value="${pv.toFixed(2)}" data-ref="${esc(p.ref)}" onchange="setPrixVente(this)" onblur="setPrixVente(this)" onclick="event.stopPropagation()">`
       :`<input class="prix-vente" type="number" inputmode="decimal" step="0.01" min="0" placeholder="—" data-ref="${esc(p.ref)}" onchange="setPrixVente(this)" onblur="setPrixVente(this)" onclick="event.stopPropagation()">`;
-    const manualFlag = isManual ? `<div class="manual-flag">✏️ saisie manuelle</div>` : "";
-    const pvCell = `<div class="pv-row">${cdtInput}<span class="x">×</span>${pvInput}</div>` + (isManual ? manualFlag : matchBadge(p));
+    const badgeHtml = isManual
+      ? `<div class="manual-flag">✏️ saisie manuelle</div>`
+      : matchBadge(p);
+    const pvCell = `<div class="pv-row">${cdtInput}<span class="x">×</span>${pvInput}</div><div id="badge-${refSafe}">${badgeHtml}</div>`;
 
     let marginCell="<span class='muted'>—</span>";
     if(mpct!==null){
@@ -585,8 +594,9 @@ function renderTable(){
   document.getElementById("next-btn").disabled=page>=pages-1;
 }
 
-function recalcMarginRow(row, p, srcEl){
+function recalcMarginRow(row, p){
   const ref = String(p.ref);
+  const refSafe = ref.replace(/[^a-zA-Z0-9_-]/g,"_");
   const paUnit = p.price_last || 0;
   const pv = getPrixVente(p);
   const cdtV = getCdtVente(p);
@@ -594,57 +604,45 @@ function recalcMarginRow(row, p, srcEl){
   const mpct = (pvUnitHt!=null && paUnit>0) ? (pvUnitHt-paUnit)/pvUnitHt*100 : null;
   const coeff = (pvUnitHt!=null && paUnit>0) ? pvUnitHt/paUnit : null;
 
-  // Marge — la pastille colorée reste car la marge est toujours calculée,
-  // qu'elle soit basée sur Lilium ou sur saisie manuelle.
+  // Cellule marge (toujours recalculée, qu'elle vienne de Lilium ou d'une saisie manuelle)
   const mc = row.cells[8];
   if(mc){
     if(mpct!==null){
       const cls=mpct>=60?"margin-good":mpct>=30?"margin-ok":"margin-bad";
       mc.innerHTML=`<span class="${cls}">${mpct.toFixed(0)}%</span><br><small style="color:var(--muted)">${coeff.toFixed(2)}x · PA ${paUnit.toFixed(3)}€/u.</small>`;
-    }else mc.innerHTML="<span class='muted'>—</span>";
+    }else{
+      mc.innerHTML="<span class='muted'>—</span>";
+    }
   }
 
-  // Badge sous les champs Vente : remplacer le badge Lilium (✅/🟡/🔴) par "✏️ saisie manuelle"
-  // dès qu'au moins un des deux champs (CDT ou PV) est saisi à la main.
+  // Badge sous les champs Vente, retrouvé par ID (fiable, pas de querySelector fragile)
   const isManual = sellPrices[ref]!==undefined || sellCdt[ref]!==undefined;
-  const pvRow = row.querySelector(".pv-row");
-  if(pvRow){
-    let badgeEl = pvRow.parentElement.querySelector(".match-badge, .manual-flag");
-    if(!badgeEl){
-      badgeEl = document.createElement("div");
-      pvRow.parentElement.appendChild(badgeEl);
-    }
-    if(isManual){
-      badgeEl.className = "manual-flag";
-      badgeEl.innerHTML = "✏️ saisie manuelle";
-    } else {
-      badgeEl.className = "match-badge";
-      badgeEl.innerHTML = p.pv_ttc && p.pv_label
-        ? matchBadge(p).replace(/<[^>]+class="match-badge"[^>]*>/,"").replace(/<\/div>$/,"")
-        : "";
-      // matchBadge() renvoie déjà le div complet — on le réinjecte simplement
-      badgeEl.outerHTML = matchBadge(p) || '<div class="match-badge"></div>';
-    }
+  const badgeDiv = document.getElementById("badge-"+refSafe);
+  if(badgeDiv){
+    badgeDiv.innerHTML = isManual ? `<div class="manual-flag">✏️ saisie manuelle</div>` : matchBadge(p);
   }
 }
 
 function setPrixVente(el){
-  // Garde anti-double-déclenchement (onchange + onblur peuvent se chevaucher)
   if(el.dataset.processing==="1") return;
   el.dataset.processing="1";
   setTimeout(()=>{el.dataset.processing="0";},150);
 
   const ref = String(el.dataset.ref);
   const val = parseFloat(el.value);
-  const prevVal = sellPrices[ref];
-  if(isNaN(val)||val<0||el.value===""){ delete sellPrices[ref]; }
-  else { sellPrices[ref]=val; }
-  if(sellPrices[ref]!==prevVal) saveSellPrices();
+
+  if(isNaN(val)||val<0||el.value===""){
+    delete sellPrices[ref];
+  } else {
+    sellPrices[ref]=val;
+  }
+  saveSellPrices();
+  console.log("[vdn] PV sauvegardé pour", ref, "→", sellPrices[ref], "| localStorage:", localStorage.getItem("vdn_sell_prices"));
 
   const row=el.closest("tr");
   if(row){
     const p=DATA.products.find(x=>String(x.ref)===ref);
-    if(p) recalcMarginRow(row,p,el);
+    if(p) recalcMarginRow(row,p);
   }
 }
 
@@ -655,15 +653,19 @@ function setCdtVente(el){
 
   const ref = String(el.dataset.ref);
   const val = parseInt(el.value);
-  const prevVal = sellCdt[ref];
-  if(isNaN(val)||val<1||el.value===""){ delete sellCdt[ref]; }
-  else { sellCdt[ref]=val; }
-  if(sellCdt[ref]!==prevVal) saveSellCdt();
+
+  if(isNaN(val)||val<1||el.value===""){
+    delete sellCdt[ref];
+  } else {
+    sellCdt[ref]=val;
+  }
+  saveSellCdt();
+  console.log("[vdn] CDT sauvegardé pour", ref, "→", sellCdt[ref], "| localStorage:", localStorage.getItem("vdn_sell_cdt"));
 
   const row=el.closest("tr");
   if(row){
     const p=DATA.products.find(x=>String(x.ref)===ref);
-    if(p) recalcMarginRow(row,p,el);
+    if(p) recalcMarginRow(row,p);
   }
 }
 
